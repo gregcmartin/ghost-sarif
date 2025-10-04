@@ -41,43 +41,43 @@ def cli(ctx, verbose):
 
 
 @cli.command()
-@click.option('--api-key', '-k', 
-              default=lambda: os.getenv('GHOST_API_KEY'), 
+@click.option('--api-key', '-k',
+              default=lambda: os.getenv('GHOST_API_KEY'),
               help='Ghost API key (or set GHOST_API_KEY env var)')
-@click.option('--base-url', '-u', 
-              default=lambda: os.getenv('GHOST_BASE_URL', 'https://api.ghostsecurity.ai'), 
+@click.option('--base-url', '-u',
+              default=lambda: os.getenv('GHOST_BASE_URL', 'https://api.ghostsecurity.ai'),
               help='Ghost API base URL (or set GHOST_BASE_URL env var)')
-@click.option('--scan-id', '-s', help='Specific scan ID to fetch findings from')
-@click.option('--output', '-o', 
-              default=lambda: os.getenv('DEFAULT_OUTPUT_PATH', 'ghost-findings.sarif'), 
+@click.option('--project-id', '-p', help='Specific project ID to filter findings (client-side filtering)')
+@click.option('--output', '-o',
+              default=lambda: os.getenv('DEFAULT_OUTPUT_PATH', 'ghost-findings.sarif'),
               help='Output SARIF file path (or set DEFAULT_OUTPUT_PATH env var)')
-@click.option('--tool-name', 
-              default=lambda: os.getenv('DEFAULT_TOOL_NAME', 'Ghost Security'), 
+@click.option('--tool-name',
+              default=lambda: os.getenv('DEFAULT_TOOL_NAME', 'Ghost Security'),
               help='Tool name in SARIF report (or set DEFAULT_TOOL_NAME env var)')
-@click.option('--tool-version', 
-              default=lambda: os.getenv('DEFAULT_TOOL_VERSION', '1.0.0'), 
+@click.option('--tool-version',
+              default=lambda: os.getenv('DEFAULT_TOOL_VERSION', '1.0.0'),
               help='Tool version in SARIF report (or set DEFAULT_TOOL_VERSION env var)')
 @click.pass_context
-def convert(ctx, api_key, base_url, scan_id, output, tool_name, tool_version):
+def convert(ctx, api_key, base_url, project_id, output, tool_name, tool_version):
     """Convert Ghost findings to SARIF format."""
     verbose = ctx.obj.get('verbose', False)
     logger = logging.getLogger(__name__)
-    
+
     # Validate API key
     if not api_key:
         click.echo("Error: Ghost API key is required. Set GHOST_API_KEY environment variable or use --api-key option.", err=True)
         sys.exit(1)
-    
+
     try:
         # Initialize Ghost client
         logger.info("Initializing Ghost API client...")
         client = GhostClient(api_key=api_key, base_url=base_url)
-        
+
         # Fetch findings
         logger.info("Fetching findings from Ghost API...")
-        if scan_id:
-            logger.info(f"Fetching findings for scan ID: {scan_id}")
-            findings = client.get_all_findings(scan_id=scan_id)
+        if project_id:
+            logger.info(f"Filtering findings for project ID: {project_id}")
+            findings = client.get_all_findings(project_id=project_id)
         else:
             logger.info("Fetching all findings")
             findings = client.get_all_findings()
@@ -177,28 +177,28 @@ def list_scans(ctx, api_key, base_url):
 
 
 @cli.command()
-@click.option('--api-key', '-k', 
-              default=lambda: os.getenv('GHOST_API_KEY'), 
+@click.option('--api-key', '-k',
+              default=lambda: os.getenv('GHOST_API_KEY'),
               help='Ghost API key (or set GHOST_API_KEY env var)')
-@click.option('--base-url', '-u', 
-              default=lambda: os.getenv('GHOST_BASE_URL', 'https://api.ghostsecurity.ai'), 
+@click.option('--base-url', '-u',
+              default=lambda: os.getenv('GHOST_BASE_URL', 'https://api.ghostsecurity.ai'),
               help='Ghost API base URL (or set GHOST_BASE_URL env var)')
-@click.option('--scan-id', '-s', help='Specific scan ID to get findings from')
+@click.option('--project-id', '-p', help='Specific project ID to filter findings (client-side filtering)')
 @click.option('--limit', '-l', default=10, help='Maximum number of findings to display')
 @click.pass_context
-def list_findings(ctx, api_key, base_url, scan_id, limit):
+def list_findings(ctx, api_key, base_url, project_id, limit):
     """List findings from Ghost API."""
     verbose = ctx.obj.get('verbose', False)
     logger = logging.getLogger(__name__)
-    
+
     try:
         # Initialize Ghost client
         logger.info("Initializing Ghost API client...")
         client = GhostClient(api_key=api_key, base_url=base_url)
-        
+
         # Fetch findings
         logger.info("Fetching findings from Ghost API...")
-        findings, _, _ = client.get_findings(scan_id=scan_id, limit=limit)
+        findings, _, _ = client.get_findings(project_id=project_id, limit=limit)
         
         if not findings:
             click.echo("No findings found.")

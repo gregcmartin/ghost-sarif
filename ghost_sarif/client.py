@@ -99,45 +99,23 @@ class GhostClient:
         
         return scans
     
-    def get_scan(self, scan_id: str) -> Optional[GhostScan]:
-        """
-        Get specific scan by ID.
-        
-        Args:
-            scan_id: Scan identifier
-            
-        Returns:
-            GhostScan object or None if not found
-        """
-        try:
-            data = self._make_request('GET', f'/v1/scans/{scan_id}')
-            
-            if 'data' in data:
-                return GhostScan(**data['data'])
-                
-        except GhostClientError as e:
-            self.logger.error(f"Failed to get scan {scan_id}: {e}")
-            
-        return None
     
-    def get_findings(self, scan_id: Optional[str] = None, limit: int = 1000, cursor: Optional[str] = None) -> tuple[List[GhostFinding], Optional[str], bool]:
+    def get_findings(self, project_id: Optional[str] = None, limit: int = 1000, cursor: Optional[str] = None) -> tuple[List[GhostFinding], Optional[str], bool]:
         """
         Get security findings with cursor-based pagination.
-        
+
         Args:
-            scan_id: Optional scan ID to filter findings
-            limit: Maximum number of findings to return
+            project_id: Optional project ID to filter findings locally (not an API parameter)
+            limit: Maximum number of findings to return (size parameter in API)
             cursor: Pagination cursor for next page
-            
+
         Returns:
             Tuple of (findings_list, next_cursor, has_more)
         """
-        params = {'limit': limit}
-        if scan_id:
-            params['scan_id'] = scan_id
+        params = {'size': limit}
         if cursor:
             params['cursor'] = cursor
-            
+
         endpoint = '/v1/findings'
         data = self._make_request('GET', endpoint, params=params)
         
@@ -147,6 +125,10 @@ class GhostClient:
         if items_key in data and isinstance(data[items_key], list):
             for finding_data in data[items_key]:
                 try:
+                    # Filter by project_id if specified (client-side filtering)
+                    if project_id and finding_data.get('project_id') != project_id:
+                        continue
+
                     # Handle different possible field names from API
                     normalized_data = self._normalize_finding_data(finding_data)
                     finding = GhostFinding(**normalized_data)
@@ -154,20 +136,20 @@ class GhostClient:
                 except Exception as e:
                     self.logger.warning(f"Failed to parse finding data: {e}")
                     continue
-        
+
         # Return pagination info
         next_cursor = data.get('next_cursor')
         has_more = data.get('has_more', False)
-        
+
         return findings, next_cursor, has_more
     
     def _normalize_finding_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Normalize finding data to match our model.
-        
+
         Args:
             data: Raw finding data from API
-            
+
         Returns:
             Normalized finding data
         """
@@ -195,13 +177,13 @@ class GhostClient:
             'urls': 'references',
             'links': 'references'
         }
-        
+
         normalized = {}
         for key, value in data.items():
             # Use mapped field name if available, otherwise use original
             normalized_key = field_mappings.get(key, key)
             normalized[normalized_key] = value
-        
+
         # Ensure required fields have default values
         if 'id' not in normalized:
             normalized['id'] = str(data.get('_id', 'unknown'))
@@ -213,41 +195,63 @@ class GhostClient:
             normalized['severity'] = 'medium'
         if 'category' not in normalized:
             normalized['category'] = 'security'
-            
+
+        # Extract location data from nested 'location' object if present
+        if 'location' in data and isinstance(data['location'], dict):
+            location = data['location']
+            if 'file_path' in location and 'file_path' not in normalized:
+                normalized['file_path'] = location['file_path']
+            if 'line_number' in location and 'line_number' not in normalized:
+                normalized['line_number'] = location['line_number']
+            if 'column_number' in location and 'column_number' not in normalized:
+                normalized['column_number'] = location['column_number']
+            # Handle path field as alternative to file_path
+            if 'path' in location and 'file_path' not in normalized:
+                normalized['file_path'] = location['path']
+            # Handle line/start_line alternatives
+            if 'line' in location and 'line_number' not in normalized:
+                normalized['line_number'] = location['line']
+            if 'start_line' in location and 'line_number' not in normalized:
+                normalized['line_number'] = location['start_line']
+
+        # Extract code snippet from vulnerable_code_block if present
+        if 'vulnerable_code_block' in data and 'code_snippet' not in normalized:
+            normalized['code_snippet'] = data['vulnerable_code_block']
+
         return normalized
     
-    def get_all_findings(self, scan_id: Optional[str] = None) -> List[GhostFinding]:
+    def get_all_findings(self, project_id: Optional[str] = None) -> List[GhostFinding]:
         """
         Get all findings with cursor-based pagination.
-        
+
         Args:
-            scan_id: Optional scan ID to filter findings
-            
+            project_id: Optional project ID to filter findings (client-side filtering)
+
         Returns:
             List of all GhostFinding objects
         """
         all_findings = []
         cursor = None
         limit = 1000
-        
+
         while True:
             findings, next_cursor, has_more = self.get_findings(
-                scan_id=scan_id, 
-                limit=limit, 
+                project_id=project_id,
+                limit=limit,
                 cursor=cursor
             )
-            
+
             if not findings:
                 break
-                
+
             all_findings.extend(findings)
             self.logger.debug(f"Retrieved {len(findings)} findings, total so far: {len(all_findings)}")
-            
+
             # Check if there are more pages
             if not has_more or not next_cursor:
                 break
-                
+
             cursor = next_cursor
-        
+
         self.logger.info(f"Retrieved {len(all_findings)} total findings")
         return all_findings

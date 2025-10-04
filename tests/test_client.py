@@ -107,23 +107,48 @@ class TestGhostClient:
         assert findings[1].severity == GhostSeverity.MEDIUM
     
     @responses.activate
-    def test_get_findings_with_scan_id(self):
-        """Test findings retrieval with scan ID filter."""
-        mock_response = {"data": []}
-        
+    def test_get_findings_with_project_id(self):
+        """Test findings retrieval with project ID filter (client-side)."""
+        mock_response = {
+            "items": [
+                {
+                    "id": "finding-1",
+                    "project_id": "test-project-id",
+                    "name": "Test Finding 1",
+                    "description": "Test description 1",
+                    "severity": "high",
+                    "class": "security"
+                },
+                {
+                    "id": "finding-2",
+                    "project_id": "other-project-id",
+                    "name": "Test Finding 2",
+                    "description": "Test description 2",
+                    "severity": "medium",
+                    "class": "security"
+                }
+            ],
+            "has_more": False,
+            "next_cursor": None
+        }
+
         responses.add(
             responses.GET,
             f"{self.base_url}/v1/findings",
             json=mock_response,
             status=200
         )
-        
-        self.client.get_findings(scan_id="test-scan-id")
-        
-        # Check that scan_id was included in the request
+
+        findings, _, _ = self.client.get_findings(project_id="test-project-id")
+
+        # Check that only matching findings were returned (client-side filtering)
+        assert len(findings) == 1
+        assert findings[0].id == "finding-1"
+        # Verify size parameter was used instead of scan_id
         assert len(responses.calls) == 1
         request = responses.calls[0].request
-        assert "scan_id=test-scan-id" in request.url
+        assert "size=" in request.url
+        assert "scan_id" not in request.url
     
     @responses.activate
     def test_api_error_handling(self):
@@ -152,9 +177,9 @@ class TestGhostClient:
             "line": 10,
             "cwe": "CWE-89"
         }
-        
+
         normalized = self.client._normalize_finding_data(raw_data)
-        
+
         assert normalized["id"] == "vuln-123"
         assert normalized["title"] == "Test Vulnerability"
         assert normalized["description"] == "Test description"
@@ -163,6 +188,29 @@ class TestGhostClient:
         assert normalized["file_path"] == "/test/file.php"
         assert normalized["line_number"] == 10
         assert normalized["cwe_id"] == "CWE-89"
+
+    def test_normalize_finding_data_with_location_object(self):
+        """Test finding data normalization with nested location object."""
+        raw_data = {
+            "id": "vuln-456",
+            "name": "SQL Injection",
+            "description": "SQL injection vulnerability",
+            "severity": "critical",
+            "class": "injection",
+            "location": {
+                "file_path": "/app/login.php",
+                "line_number": 42,
+                "column_number": 10
+            },
+            "vulnerable_code_block": "$query = \"SELECT * FROM users WHERE id = \" . $_GET['id'];"
+        }
+
+        normalized = self.client._normalize_finding_data(raw_data)
+
+        assert normalized["file_path"] == "/app/login.php"
+        assert normalized["line_number"] == 42
+        assert normalized["column_number"] == 10
+        assert normalized["code_snippet"] == "$query = \"SELECT * FROM users WHERE id = \" . $_GET['id'];"
     
     def test_normalize_finding_data_with_defaults(self):
         """Test finding data normalization with missing required fields."""
@@ -227,14 +275,14 @@ class TestGhostClient:
         
         assert len(findings) == 124
         assert len(responses.calls) == 2
-        
-        # Check pagination parameters
+
+        # Check pagination parameters (using 'size' not 'limit')
         first_call = responses.calls[0].request
-        assert "limit=1000" in first_call.url
+        assert "size=1000" in first_call.url
         assert "cursor=" not in first_call.url  # No cursor on first call
-        
+
         second_call = responses.calls[1].request
-        assert "limit=1000" in second_call.url
+        assert "size=1000" in second_call.url
         assert "cursor=test-cursor-123" in second_call.url
 
 

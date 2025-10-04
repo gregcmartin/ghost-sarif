@@ -54,14 +54,17 @@ ghost-sarif convert --output findings.sarif
 # Or specify API key directly
 ghost-sarif convert --api-key YOUR_API_KEY --output findings.sarif
 
-# Convert findings from a specific scan
-ghost-sarif convert --scan-id SCAN_ID --output scan_findings.sarif
+# Filter findings by project ID (client-side filtering)
+ghost-sarif convert --project-id PROJECT_ID --output project_findings.sarif
 
 # List available scans
 ghost-sarif list-scans
 
 # List recent findings
 ghost-sarif list-findings --limit 20
+
+# Filter findings by project ID
+ghost-sarif list-findings --project-id PROJECT_ID --limit 20
 
 # Validate a SARIF file
 ghost-sarif validate findings.sarif
@@ -227,8 +230,17 @@ Ghost-SARIF/
 ### Supported Endpoints
 
 - `GET /v1/scans` - List scans
-- `GET /v1/scans/{id}` - Get specific scan
-- `GET /v1/findings` - List findings (with optional scan_id filter)
+- `GET /v1/findings` - List findings with cursor-based pagination
+
+### Query Parameters
+
+The `/v1/findings` endpoint supports:
+- `size` - Page size (1-1000, default: 100)
+- `cursor` - Pagination cursor
+- `sort` - Sort field (created_at, updated_at)
+- `order` - Sort order (asc, desc)
+
+**Note:** The API does not support server-side filtering by `scan_id` or `project_id`. To filter findings by `project_id`, use the `--project-id` option which performs client-side filtering after fetching all results.
 
 ## Contributing
 
